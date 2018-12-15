@@ -7,7 +7,7 @@ class Passanger:
 		self.name = name
 		self.loyalty_card = None
 
-	def add_loyalty_card(loyalty_card):
+	def add_loyalty_card(self,loyalty_card):
 		self.loyalty_card = loyalty_card
 
 	def __str__(self):

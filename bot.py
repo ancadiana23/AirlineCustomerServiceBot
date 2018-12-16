@@ -5,7 +5,7 @@ import speech_recognition as sr
 from google.cloud import texttospeech
 
 from booking import Booking
-from passanger import Passanger
+from passenger import Passenger
 from flight import Flight
 from problem import Problem
 from ticket import Ticket
@@ -26,13 +26,13 @@ class Bot:
 			raise TypeError("`microphone` must be `Microphone` instance")
 
 		self.init_synthethic_dataset()
-		#self.print_database()
+		self.print_database()
 		self.init_question_asnwers_map()
 
 
 	def init_synthethic_dataset(self):
 		self.database = {}
-		Passangers  = [Passanger(name) for name in ["John Green", \
+		passengers  = [Passenger(name) for name in ["John Green", \
 											  "Louie Anderson", \
 											  "Liza Koshy"]]
 		bookings = [Booking(*booking) for booking in 
@@ -45,31 +45,44 @@ class Bot:
 						 ("KLM", "LHR", "AMS", "01-Jan-2019", 300), \
 						 ("Eurowings", "BER", "ARN", "02-Mar-2019", 300)]]
 		tickets = [Ticket(*ticket) for ticket in \
-						[(Passangers[0], flights[0], "economy"),
-						 (Passangers[0], flights[1], "economy"),
-						 (Passangers[1], flights[2], "business"), \
-						 (Passangers[2], flights[3], "economy")]]
+						[(passengers[0], flights[0], "economy"),
+						 (passengers[0], flights[1], "economy"),
+						 (passengers[1], flights[2], "business"), \
+						 (passengers[2], flights[3], "economy")]]
 		bookings[0].add_ticket(tickets[0])
 		bookings[0].add_ticket(tickets[1])
 		bookings[1].add_ticket(tickets[2])
 		bookings[2].add_ticket(tickets[3])
 
-		self.database["Passangers"] = Passangers
+		self.database["passengers"] = passengers
 		self.database["bookings"] = bookings
 		self.database["flights"] = flights
 		self.database["tickets"] = tickets
+		self.database["name_to_tickets"] = {passenger.name: [] for passenger in passengers}
+		for ticket in tickets:
+			self.database["name_to_tickets"][ticket.client.name] += [ticket]
 
 
 	def print_database(self):
 		for key in self.database:
 			for x in self.database[key]:
 				print(x)
+		print(self.database["name_to_tickets"])
+
 
 	def init_question_asnwers_map(self):
-		self.questions_to_answers = {"hi" : ("Hello, how may I help you today?", Bot.no_action),
-						"could you tell me the waiting time" : 
-							("The security waiting time at the Schipol Airport is aproximately 5 minutes.", Bot.no_action),
-						"goodbye": ("Goodbye, have a pleasant day.", self.stop )}
+		self.questions_to_answers = { \
+			".*security waiting time .* Heathrow Airport.*" : 
+				("The security waiting time at the Heathrow Airport is \
+					aproximately 10 minutes.", Bot.no_action),
+			".*know the time of my flight.*":
+				("", self.flight_information),
+			"goodbye": ("Goodbye, have a pleasant day.", self.stop ),
+			".*book .* flight.*": 
+				("Let me connect you to our customer service department.", self.stop),
+			".*cancel .* flight.*": 
+				("", self.cancel_flight)}
+
 
 	def speak(self, text):
 		# Set the text input to be synthesized
@@ -98,17 +111,7 @@ class Bot:
 
 
 	def recognize_speech_from_mic(self):
-		"""Transcribe speech from recorded from `microphone`.
-
-		Returns a dictionary with three keys:
-		"success": a boolean indicating whether or not the API request was
-				   successful
-		"error":   `None` if no error occured, otherwise a string containing
-				   an error message if the API could not be reached or
-				   speech was unrecognizable
-		"transcription": `None` if speech could not be transcribed,
-				   otherwise a string containing the transcribed text
-		"""
+		"""Transcribe speech from recorded from `microphone`."""
 
 		# adjust the recognizer sensitivity to ambient noise and record audio
 		# from the microphone
@@ -116,22 +119,19 @@ class Bot:
 			self.recognizer.adjust_for_ambient_noise(source)
 			audio = self.recognizer.listen(source)
 
-		# set up the response object
-		response = {
-			"success": True,
-			"error": None,
-			"transcription": None
-		}
-
+		response = ""
 		try:
-			response["transcription"] = self.recognizer.recognize_google(audio)
+			response = self.recognizer.recognize_google(audio)
+			# show the user the transcription
+			print("You said: {}".format(response))
+
 		except sr.RequestError:
 			# API was unreachable or unresponsive
-			response["success"] = False
-			response["error"] = "API unavailable"
+			self.speak("I didn't catch that. Could you repeat please?\n")
+
 		except sr.UnknownValueError:
 			# speech was unintelligible
-			response["error"] = "Unable to recognize speech"
+			self.speak("ERROR, Unable to recognize speech")
 
 		return response
 
@@ -139,33 +139,104 @@ class Bot:
 	def no_action():
 		pass
 
+
 	def stop(self):
 		self.run = False
+
+
+	def get_client_name(self):
+		name = ""
+		if "name" in self.problem.information:
+			return True
+		else:
+			self.speak("Could you tell me your name, please?")
+			name = self.recognize_speech_from_mic() 
+		
+		if name not in self.database["name_to_tickets"]:
+			self.speak("Could not find the name " + name + "in our database.")
+			return False
+
+		self.problem.information["name"] = name
+		return True
+
+
+	def flight_information(self):
+		got_client_name = self.get_client_name()
+		if not got_client_name:
+			return
+
+		tickets = self.database["name_to_tickets"]\
+							   [self.problem.information["name"]]
+		if not tickets:
+			self.speak("You have no flights coming up.")
+			return
+		self.speak("You have a flight coming up on " + \
+				   tickets[0].flight.time)
+
+
+	def cancel_flight(self):
+		got_client_name = self.get_client_name()
+		if not got_client_name:
+			return
+
+		tickets = self.database["name_to_tickets"]\
+							   [self.problem.information["name"]]
+		if not tickets:
+			self.speak("You have no flights coming up.")
+			return
+
+		self.speak("You have a flight coming up on " + 
+				   tickets[0].flight.time+ \
+				   ". Is this the one you want to cancel?")
+		answer = self.recognize_speech_from_mic()
+		if answer == "yes":
+			self.speak("Are you sure you want to cancel your flight to " + 
+				tickets[0].flight.destination + " on " +
+				tickets[0].flight.time + "?")
+		else:
+			return
+		answer = self.recognize_speech_from_mic()
+		if answer == "yes":
+			self.database["name_to_tickets"][self.problem.information["name"]].remove(tickets[0])
+			#self.database["tickets"].remove(tickets[0])
+			self.speak("Done")
+			
 	
 	def run(self):
 		self.run = True
+		self.done = False
+		self.problem = Problem("")
+
+		self.speak("Hello, how may I help you today?")
+
 		while self.run:
 			print("How may I help you?")
 			question = self.recognize_speech_from_mic()
-			if not question["success"]:
-				self.speak("I didn't catch that. Could you repeat please?\n")
-				continue
+			
+			# If we asked "Can I help you with anything else?" and the
+			# answer is "no" then exit.
+			if self.done and question == "no":
+				self.speak("Goodbye, have a pleasant day.")
+				break
+			else:
+				self.done = False
 
-			# if there was an error, stop the game
-			if question["error"]:
-				self.speak("ERROR: {}".format(question["error"]))
-				continue
-
-			# show the user the transcription
-			print("You said: {}".format(question["transcription"]))
-
+			self.problem.content = question
+			found = True
 			for re_exp in self.questions_to_answers.keys():
-				if not re.match(re_exp, question["transcription"]):
+				if not re.match(re_exp, question):
 					continue
 				# Speak the message
 				self.speak(self.questions_to_answers[re_exp][0])
 				# Perform the action
 				self.questions_to_answers[re_exp][1]()
+				self.done = True
+
+				if self.run:
+					self.speak("Can I help you with anything else?")
+				
+			if not found:
+				self.speak("I'm sorry, I don't know how to help with that.")
 
 if __name__ == "__main__":
 	bot = Bot()

@@ -136,7 +136,7 @@ class Bot:
 		return response
 
 
-	def no_action():
+	def no_action(self):
 		pass
 
 

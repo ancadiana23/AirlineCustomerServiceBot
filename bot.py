@@ -32,9 +32,9 @@ class Bot:
 
 	def init_synthethic_dataset(self):
 		self.database = {}
-		passengers  = [Passenger(name) for name in ["John Green", \
-											  "Louie Anderson", \
-											  "Liza Koshy"]]
+		passengers  = [Passenger(name) for name in ["john green", \
+											  "louie anderson", \
+											  "liza koshy"]]
 		bookings = [Booking(*booking) for booking in 
 						[("AMS", "ZRH", "10-Dec-2018"), \
 		 				 ("LHR", "AMS", "01-Jan-2019"), \
@@ -43,7 +43,7 @@ class Bot:
 						[("KLM", "AMS", "BSL", "10-Dec-2018", 200), \
 						 ("SWISS", "BSL", "ZRH", "10-Dec-2018", 100), \
 						 ("KLM", "LHR", "AMS", "01-Jan-2019", 300), \
-						 ("Eurowings", "BER", "ARN", "02-Mar-2019", 300)]]
+						 ("Eurowings", "Berlin", "Stockholm", "02-Mar-2019", 300)]]
 		tickets = [Ticket(*ticket) for ticket in \
 						[(passengers[0], flights[0], "economy"),
 						 (passengers[0], flights[1], "economy"),
@@ -74,14 +74,14 @@ class Bot:
 		self.questions_to_answers = { \
 			".*security waiting time .* Heathrow Airport.*" : 
 				("The security waiting time at the Heathrow Airport is \
-					aproximately 10 minutes.", Bot.no_action),
-			".*know the time of my flight.*":
-				("", self.flight_information),
-			"goodbye": ("Goodbye, have a pleasant day.", self.stop ),
+					aproximately 10 minutes.", Bot.no_action, "information"),
+			".*know the time .* flight.*":
+				("", self.flight_information, "information"),
+			"goodbye": ("Goodbye, have a pleasant day.", self.stop, "information"),
 			".*book .* flight.*": 
-				("Let me connect you to our customer service department.", self.stop),
+				("Let me connect you to our customer service department.", self.stop, "booking"),
 			".*cancel .* flight.*": 
-				("", self.cancel_flight)}
+				("", self.cancel_flight, "booking")}
 
 
 	def speak(self, text):
@@ -131,12 +131,13 @@ class Bot:
 
 		except sr.UnknownValueError:
 			# speech was unintelligible
-			self.speak("ERROR, Unable to recognize speech")
+			self.speak("I didn't catch that. Could you repeat please?\n")
+			#self.speak("ERROR, Unable to recognize speech")
 
 		return response
 
 
-	def no_action(self):
+	def no_action():
 		pass
 
 
@@ -149,8 +150,8 @@ class Bot:
 		if "name" in self.problem.information:
 			return True
 		else:
-			self.speak("Could you tell me your name, please?")
-			name = self.recognize_speech_from_mic() 
+			self.speak("Could you tell me your name please.")
+			name = self.recognize_speech_from_mic().lower()
 		
 		if name not in self.database["name_to_tickets"]:
 			self.speak("Could not find the name " + name + "in our database.")
@@ -200,7 +201,34 @@ class Bot:
 			self.database["name_to_tickets"][self.problem.information["name"]].remove(tickets[0])
 			#self.database["tickets"].remove(tickets[0])
 			self.speak("Done")
-			
+	
+
+	def classify(self):
+		information_re = ".*(?:know|time|goodbye).*"
+		booking_re = ".*(?:book|cancel).*"
+		if re.match(information_re, self.problem.content):
+			self.problem.type = "information"
+
+		if re.match(booking_re, self.problem.content):
+			self.problem.type = "booking"
+
+
+	def assess(self):
+		for re_exp in self.questions_to_answers.keys():
+			if not re.match(re_exp, question):
+				continue
+
+			# Speak the message
+			self.speak(self.questions_to_answers[re_exp][0])
+			# Perform the action
+			self.questions_to_answers[re_exp][1]()
+			self.done = True
+
+			if self.run:
+				self.speak("Can I help you with anything else?")
+			return True
+		return False
+
 	
 	def run(self):
 		self.run = True
@@ -215,27 +243,17 @@ class Bot:
 			
 			# If we asked "Can I help you with anything else?" and the
 			# answer is "no" then exit.
-			if self.done and question == "no":
+			if self.done and re.match(".*no.*", question):
 				self.speak("Goodbye, have a pleasant day.")
 				break
 			else:
 				self.done = False
 
 			self.problem.content = question
-			found = True
-			for re_exp in self.questions_to_answers.keys():
-				if not re.match(re_exp, question):
-					continue
-				# Speak the message
-				self.speak(self.questions_to_answers[re_exp][0])
-				# Perform the action
-				self.questions_to_answers[re_exp][1]()
-				self.done = True
-
-				if self.run:
-					self.speak("Can I help you with anything else?")
+			self.classify()
+			success = self.assess()
 				
-			if not found:
+			if not success:
 				self.speak("I'm sorry, I don't know how to help with that.")
 
 if __name__ == "__main__":

@@ -28,6 +28,7 @@ class Bot:
 		self.init_synthethic_dataset()
 		self.print_database()
 		self.init_question_asnwers_map()
+		self.init_airport_to_city_map()
 
 
 	def init_synthethic_dataset(self):
@@ -43,7 +44,7 @@ class Bot:
 						[("KLM", "AMS", "BSL", "10-Dec-2018", 200), \
 						 ("SWISS", "BSL", "ZRH", "10-Dec-2018", 100), \
 						 ("KLM", "LHR", "AMS", "01-Jan-2019", 300), \
-						 ("Eurowings", "Berlin", "Stockholm", "02-Mar-2019", 300)]]
+						 ("Eurowings", "BER", "ARN", "02-Mar-2019", 300)]]
 		tickets = [Ticket(*ticket) for ticket in \
 						[(passengers[0], flights[0], "economy"),
 						 (passengers[0], flights[1], "economy"),
@@ -82,6 +83,16 @@ class Bot:
 				("Let me connect you to our customer service department.", self.stop, "booking"),
 			".*cancel .* flight.*": 
 				("", self.cancel_flight, "booking")}
+
+	def init_airport_to_city_map(self):
+		self.airport_to_city = {
+			"AMS": "Amsterdam",
+			"ARN": "Stockholm",
+			"BER": "Berlin",
+			"BSL": "Basel",
+			"LHR": "Heathrow",
+			"ZRH": "Zurich"
+		}
 
 
 	def speak(self, text):
@@ -192,7 +203,7 @@ class Bot:
 		answer = self.recognize_speech_from_mic()
 		if answer == "yes":
 			self.speak("Are you sure you want to cancel your flight to " + 
-				tickets[0].flight.destination + " on " +
+				self.airport_to_city[tickets[0].flight.destination] + " on " +
 				tickets[0].flight.time + "?")
 		else:
 			return
@@ -215,7 +226,7 @@ class Bot:
 
 	def assess(self):
 		for re_exp in self.questions_to_answers.keys():
-			if not re.match(re_exp, question):
+			if not re.match(re_exp, self.problem.content):
 				continue
 
 			# Speak the message

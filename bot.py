@@ -214,16 +214,25 @@ class Bot:
 			self.speak("Done")
 	
 
+	"""
+	Using the recognized problem, it will classify it.
+	Return a classified problem.
+	"""
 	def classify(self):
 		information_re = ".*(?:know|time|goodbye).*"
 		booking_re = ".*(?:book|cancel).*"
 		if re.match(information_re, self.problem.content):
 			self.problem.type = "information"
-
-		if re.match(booking_re, self.problem.content):
+		elif re.match(booking_re, self.problem.content):
 			self.problem.type = "booking"
+		else:
+			self.problem.type = "other"
 
-
+	"""
+	Receive a classified abstracted problem and decide weather it can solve it or not.
+	For doing so it uses a series of rules that the airline API would provide.
+	Return a solution to the problem. if positive with information about the solution.
+	"""
 	def assess(self):
 		for re_exp in self.questions_to_answers.keys():
 			if not re.match(re_exp, self.problem.content):
